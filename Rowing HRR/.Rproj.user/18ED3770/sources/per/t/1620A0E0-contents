@@ -1,0 +1,184 @@
+#
+# This is a Shiny web application. You can run the application by clicking
+# the 'Run App' button above.
+#
+# Find out more about building applications with Shiny here:
+#
+#    https://shiny.posit.co/
+#
+
+## Load necessary libraries
+lapply(c("shiny", "shinyjs", "ggplot2", "dplyr", "bslib", "bsicons", "shinydashboard", "DT"), library, character.only = TRUE) 
+
+
+## Define UI for the application
+ui <- fluidPage(
+  
+  # Application title
+  titlePanel("5' Minute Heart Rate Recovery (HRR) Test"),
+  
+  # Instruction block
+  fluidRow(
+    column(12, 
+           div(
+             style = "background-color: #f9f9f9; padding: 15px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px;",
+             h4("Instructions"),
+             p("Welcome to the 5' Minute Heart Rate Recovery (HRR) Test app."),
+             p("Follow the steps below to complete your test:"),
+             tags$ol(
+               tags$li("Go to the 'Athlete Profile' tab to enter your profile details."),
+               tags$li("Navigate to the '5' HRR Test' tab to input your heart rate readings."),
+               tags$li("View your results under the 'Individual Results' tab."),
+               tags$li("For team data, go to the 'Team Results' tab.")
+             ),
+             p("Ensure that your maximum heart rate is accurate and within a valid range (0–250 bpm).")
+           )
+    )
+  ),
+  
+  # User Profile tab panel
+  tabsetPanel(
+    tabPanel("Athlete Profile",
+             textInput("name", "Name", placeholder = "First Name Last Name"),
+             selectInput("sex", "Sex", choices = c("Male", "Female")),
+             dateInput("dob", "Date of Birth (Year-Month-Day)", value = Sys.Date()),
+             selectInput("row_class", "Rowing Discipline", choices = c("Classic (Openweight/Lightweight)", "Classic (Para)", "Indoor", "Coastal/Beach Sprints")),
+             numericInput("HRmax", "Maximum Heart Rate (bpm)", value = 150, min = 0, max = 250),
+             actionButton("submit_profile", "Submit", 
+                          class = "btn-lng btn-success", 
+                          style = "color: white; background-color: #00234f; border-color: black;", 
+                          icon = icon("heart-pulse")),
+             verbatimTextOutput("validation_message"),
+             tags$br(), tags$br(),
+             DTOutput("athlete_table")
+    ),
+    tabPanel("5' HRR Test",
+             sidebarLayout(
+               sidebarPanel(
+                 numericInput("five_min_watts", label = "Average Watts for 5'", value = 0, min = 0, max = 1500),
+                 numericInput("five_min_hr", label = "HR at 5-minutes", value = 0, min = 0, max = 250),
+                 numericInput("one_min_hr", label = "HR at 1-minute", value = 0, min = 0, max = 250), 
+                 numericInput("two_min_hr", label = "HR at 2-minutes", value = 0, min = 0, max = 250),
+                 fluidRow(
+                   column(12, 
+                          tags$div(
+                            sliderInput("RPE", label = "Rate of Perceived Exertion", value = 1, min = 1, max = 10),
+                            uiOutput("rpe_description"),  # Dynamic description
+                            style = "text-align: center; margin-bottom: 20px; bold"  # Center-align the text and add spacing
+                          )
+                   )
+                 ),
+                 actionButton("submit_hrr", "Submit HRR Data", 
+                              class = "btn-lng btn-success", 
+                              style = "color: white; background-color: #00234f; border-color: black;", 
+                              icon = icon("heart-pulse")),
+                 tags$br(), tags$br(),
+                 tableOutput("HRR_table")
+               ),
+               mainPanel(
+                 h4("Trend Analysis Placeholder"),
+                 plotOutput("trend_plot")  # Add a plot output or another UI element
+               )
+             )
+    ),
+    tabPanel("Individual Results",
+             p("Individual results will be displayed here.")
+    ),
+    tabPanel("Team Results",
+             p("Team results will be displayed here.")
+    )
+  )
+)
+
+## Define server logic
+server <- function(input, output, session) {
+  
+  # Reactive value to store validation messages
+  validation_message <- reactiveVal("")
+  
+  # Reactive data frame to store athlete data
+  athlete_data <- reactiveVal(data.frame(
+    Name = character(),
+    Sex = character(),
+    Date = as.Date(character()),
+    Rowing_Discipline = character(),
+    HRmax = numeric(),
+    stringsAsFactors = FALSE
+  ))
+  
+  # Reactive data frame to store HRR test data
+  HRR_data <- reactiveVal(data.frame(
+    Watts = numeric(),
+    HR_5min = numeric(),
+    HR_1min = numeric(),
+    HR_2min = numeric(),
+    RPE = numeric(),
+    stringsAsFactors = FALSE
+  ))
+  
+  # Observe the Submit button for Athlete Profile
+  observeEvent(input$submit_profile, {
+    if (input$name == "") {
+      validation_message("Error: Name cannot be empty.")
+    } else {
+      validation_message("")
+      new_data <- data.frame(
+        Name = input$name,
+        Sex = input$sex,
+        Date = input$dob,
+        Rowing_Discipline = input$row_class,
+        HRmax = input$HRmax,
+        stringsAsFactors = FALSE
+      )
+      athlete_data(rbind(athlete_data(), new_data))
+      showNotification("Profile submitted successfully!", type = "message")
+    }
+  })
+  
+  # Observe the Submit button for HRR Test
+  observeEvent(input$submit_hrr, {
+    new_data <- data.frame(
+      Watts = input$five_min_watts,
+      HR_5min = input$five_min_hr,
+      HR_1min = input$one_min_hr,
+      HR_2min = input$two_min_hr,
+      RPE = input$RPE,
+      stringsAsFactors = FALSE
+    )
+    HRR_data(rbind(HRR_data(), new_data))
+    showNotification("HRR data submitted successfully!", type = "message")
+  })
+  
+  # Output validation messages
+  output$validation_message <- renderText({ validation_message() })
+  
+  # Output the table of stored athlete data
+  output$athlete_table <- renderDT({
+    datatable(athlete_data(), colnames = c("Name", "Sex", "Date", "Rowing Discipline", "HRmax"))
+  })
+  
+    # Reactive text based on slider value
+    output$rpe_description <- renderUI({
+      tags$strong(
+      switch(as.character(input$RPE),
+             "1" = "Very Very Easy",
+             "2" = "Easy",
+             "3" = "Moderate Effort",
+             "4" = "Somewhat Hard",
+             "5" = "Hard",
+             "6" = "Hard",
+             "7" = "Very Hard",
+             "8" = "Very Hard",
+             "9" = "Very Hard",
+             "10" = "Maximal Effort")
+    )
+    })
+
+  
+  # Output the table of stored HRR data
+  output$HRR_table <- renderTable({ HRR_data() })
+
+}
+
+## Run the application
+shinyApp(ui = ui, server = server)
